@@ -15,7 +15,7 @@ The script `main.py`:
 2. Retrieves all anatomy class short_form IDs using a Cypher query.
 3. For each predefined OWLERY query and each anatomy ID, constructs the query URL and sends a GET request to the OWLERY server.
 4. Runs queries concurrently (up to 9 parallel requests per ID) to speed up caching.
-5. Logs the URL and status for each query.
+5. Logs a success indicator (✓) with result count for successful queries, or error details with URL for failures.
 
 Run with:
 ```

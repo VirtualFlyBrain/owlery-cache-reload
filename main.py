@@ -16,7 +16,15 @@ def run_query(name, url_template, id, timeout=60):
     query_url = url_template.format(id=id)
     try:
         response = requests.get(query_url, timeout=timeout)
-        return f"Ran {name} for {id}: {query_url}, status {response.status_code}"
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                count = len(data.get('results', {}).get('bindings', []))
+                return f"✓ {name} for {id}: {count} results"
+            except:
+                return f"✓ {name} for {id}"
+        else:
+            return f"Error for {name} {id}: {query_url}, status {response.status_code}"
     except Exception as e:
         return f"Error for {name} {id}: {query_url}, {str(e)}"
 
@@ -46,7 +54,7 @@ def main():
 
     # Get all anatomy class IDs
     print("Retrieving all anatomy class IDs...")
-    id_query = "MATCH (n:Class) WHERE n.short_form STARTS WITH 'FBbt' RETURN n.short_form LIMIT 10"
+    id_query = "MATCH (n:Class) WHERE n.short_form STARTS WITH 'FBbt' RETURN n.short_form"
     ids_result = vfb.nc.commit_list([id_query])
     ids = [row['row'][0] for row in ids_result[0]['data']]
     print(f"Found {len(ids)} anatomy IDs.")
