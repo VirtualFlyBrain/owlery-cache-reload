@@ -19,7 +19,12 @@ def run_query(name, url_template, id, timeout=60):
         if response.status_code == 200:
             try:
                 data = response.json()
-                count = len(data.get('results', {}).get('bindings', []))
+                if 'instances' in query_url:
+                    count = len(data.get('hasInstance', []))
+                elif 'subclasses' in query_url:
+                    count = len(data.get('superClassOf', []))
+                else:
+                    count = 0  # For other endpoints if any
                 return f"✓ {name} for {id}: {count} results"
             except:
                 return f"✓ {name} for {id}"
