@@ -14,16 +14,16 @@ The script `main.py`:
 1. Connects to the VFB database using VFBconnect.
 2. Retrieves all anatomy class short_form IDs using a Cypher query.
 3. For each predefined OWLERY query and each anatomy ID, constructs the query URL and sends a GET request to the OWLERY server.
-4. Runs queries concurrently (up to 9 parallel requests per ID) to speed up caching.
+4. Runs queries concurrently (up to the specified number of parallel requests per ID) to speed up caching.
 5. Logs a success indicator (✓) with result count for successful queries, or error details with URL for failures.
 
 Run with:
 ```
 source .venv/bin/activate
-python main.py [--max-ids N] [--timeout T]
+python main.py [--max-ids N] [--timeout T] [--parallel P]
 ```
 
-Where `--max-ids N` limits to the first N IDs per query for testing (optional), and `--timeout T` sets the timeout in seconds for each request (default 60).
+Where `--max-ids N` limits to the first N IDs per query for testing (optional), `--timeout T` sets the timeout in seconds for each request (default 60), and `--parallel P` sets the number of parallel requests to run at once (default 9).
 
 Each request has a configurable timeout (default 60 seconds). Some queries may timeout, but the cache will still be populated for successful ones.
 
