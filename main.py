@@ -50,6 +50,7 @@ def main():
     parser = argparse.ArgumentParser(description='Cache OWLERY queries for VFB.')
     parser.add_argument('--max-ids', type=int, default=None, help='Maximum number of IDs to test per query (for testing).')
     parser.add_argument('--timeout', type=int, default=60, help='Timeout in seconds for each query request.')
+    parser.add_argument('--parallel', type=int, default=9, help='Number of parallel requests to run at once.')
     args = parser.parse_args()
 
     # Connect to VFB
@@ -73,7 +74,7 @@ def main():
     count = 0
     for id in ids:
         print(f"Processing ID: {id}")
-        with ThreadPoolExecutor(max_workers=9) as executor:
+        with ThreadPoolExecutor(max_workers=args.parallel) as executor:
             futures = [executor.submit(run_query, name, url_template, id, args.timeout) for name, url_template in queries]
             for future in as_completed(futures):
                 result = future.result()
