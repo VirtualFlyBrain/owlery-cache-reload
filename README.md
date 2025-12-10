@@ -13,7 +13,8 @@ The script extracts OWLERY queries from the [queries_execution_notebook.ipynb](h
 The script `main.py`:
 1. Connects to the VFB database using VFBconnect.
 2. Retrieves all anatomy class short_form IDs using a Cypher query.
-3. For each predefined OWLERY query and each anatomy ID, constructs the query URL and sends a GET request to the OWLERY server.
+3. Sorts the IDs in descending order to process the newest ones first.
+4. For each predefined OWLERY query and each anatomy ID, constructs the query URL and sends a GET request to the OWLERY server.
 4. Runs queries concurrently (up to the specified number of parallel requests per ID) to speed up caching.
 5. Logs a success indicator (✓) with result count for successful queries, or error details with URL for failures.
 

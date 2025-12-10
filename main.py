@@ -62,6 +62,7 @@ def main():
     id_query = "MATCH (n:Class) WHERE n.short_form STARTS WITH 'FBbt' RETURN n.short_form"
     ids_result = vfb.nc.commit_list([id_query])
     ids = [row['row'][0] for row in ids_result[0]['data']]
+    ids.sort(reverse=True)  # Sort IDs in descending order to handle newest ones first
     print(f"Found {len(ids)} anatomy IDs.")
 
     if args.max_ids:
