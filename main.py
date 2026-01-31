@@ -60,7 +60,7 @@ def main():
 
     # Get all anatomy class IDs
     print("Retrieving all anatomy class IDs...")
-    id_query = "MATCH (n:Entity) WHERE exists(n.short_form) AND (n:Class OR n:Individual) RETURN distinct n.short_form"
+    id_query = "MATCH (n:Entity) WHERE exists(n.short_form) AND (n:Class OR n:Individual) AND NOT n.short_form starts with 'VFBc_' RETURN distinct n.short_form"
     ids_result = vfb.nc.commit_list([id_query])
     ids = [row['row'][0] for row in ids_result[0]['data']]
     ids.sort(reverse=True)  # Sort IDs in descending order to handle newest ones first
