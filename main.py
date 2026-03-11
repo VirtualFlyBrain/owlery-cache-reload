@@ -7,15 +7,22 @@ with all potential anatomy IDs against the OWLERY server.
 """
 
 import requests
-import time
+import threading
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from vfb_connect import vfb
 
+_thread_local = threading.local()
+
+def _get_session():
+    if not hasattr(_thread_local, 'session'):
+        _thread_local.session = requests.Session()
+    return _thread_local.session
+
 def run_query(name, url_template, id, timeout=60):
     query_url = url_template.format(id=id)
     try:
-        response = requests.get(query_url, timeout=timeout)
+        response = _get_session().get(query_url, timeout=timeout)
         if response.status_code == 200:
             try:
                 data = response.json()
@@ -63,7 +70,7 @@ def main():
     parser = argparse.ArgumentParser(description='Cache OWLERY queries for VFB.')
     parser.add_argument('--max-ids', type=int, default=None, help='Maximum number of IDs to test per query (for testing).')
     parser.add_argument('--timeout', type=int, default=60, help='Timeout in seconds for each query request.')
-    parser.add_argument('--parallel', type=int, default=9, help='Number of parallel requests to run at once.')
+    parser.add_argument('--parallel', type=int, default=50, help='Number of parallel requests to run at once.')
     args = parser.parse_args()
 
     # Connect to VFB
@@ -85,16 +92,16 @@ def main():
     total_queries = len(queries) * len(ids)
     print(f"Total queries to run: {total_queries}")
 
+    all_tasks = [(name, url_template, id) for id in ids for name, url_template in queries]
+
     count = 0
-    for id in ids:
-        print(f"Processing ID: {id}")
-        with ThreadPoolExecutor(max_workers=args.parallel) as executor:
-            futures = [executor.submit(run_query, name, url_template, id, args.timeout) for name, url_template in queries]
-            for future in as_completed(futures):
-                result = future.result()
-                count += 1
-                print(f"[{count}/{total_queries}] {result}")
-                time.sleep(0.1)  # Small delay between prints
+    with ThreadPoolExecutor(max_workers=args.parallel) as executor:
+        futures = {executor.submit(run_query, name, url_template, id, args.timeout): (name, id)
+                   for name, url_template, id in all_tasks}
+        for future in as_completed(futures):
+            result = future.result()
+            count += 1
+            print(f"[{count}/{total_queries}] {result}")
 
     print("Caching complete.")
 
