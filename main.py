@@ -59,7 +59,7 @@ queries = [
 def main():
     parser = argparse.ArgumentParser(description='Cache OWLERY queries for VFB.')
     parser.add_argument('--max-ids', type=int, default=None, help='Maximum number of IDs to test per query (for testing).')
-    parser.add_argument('--timeout', type=int, default=60, help='Timeout in seconds for each query request.')
+    parser.add_argument('--timeout', type=int, default=9000, help='Timeout in seconds for each query request.')
     parser.add_argument('--parallel', type=int, default=50, help='Number of parallel requests to run at once.')
     args = parser.parse_args()
 
