@@ -72,7 +72,16 @@ def main():
     id_query = "MATCH (n:Entity) WHERE exists(n.short_form) AND (n:Class OR n:Individual) AND NOT n.short_form starts with 'VFBc_' AND NOT n.short_form starts with 'VFB_internal' RETURN distinct n.short_form"
     ids_result = vfb.nc.commit_list([id_query])
     ids = [row['row'][0] for row in ids_result[0]['data']]
-    ids.sort(reverse=True)  # Sort IDs in descending order to handle newest ones first
+
+    def id_sort_key(id):
+        if id.startswith('FBbt_'):
+            return (0, id)
+        elif id.startswith('VFB_'):
+            return (1, id)
+        else:
+            return (2, id)
+
+    ids.sort(key=id_sort_key)
     print(f"Found {len(ids)} anatomy IDs.")
 
     if args.max_ids:
