@@ -44,7 +44,19 @@ queries = [
     ("subClassOf cell overlaps some X", "http://owl.virtualflybrain.org/kbs/vfb/subclasses?object=%3Chttp://purl.obolibrary.org/obo/CL_0000000%3E%20and%20%3Chttp://purl.obolibrary.org/obo/RO_0002131%3E%20some%20%3Chttp://purl.obolibrary.org/obo/{id}%3E&direct=false&includeDeprecated=false&includeEquivalent=true"),
     ("Owlery Images of neurons with some part here", "http://owl.virtualflybrain.org/kbs/vfb/instances?object=%3Chttp://purl.obolibrary.org/obo/FBbt_00005106%3E%20and%20%3Chttp://purl.obolibrary.org/obo/RO_0002131%3E%20some%20%3Chttp://purl.obolibrary.org/obo/{id}%3E&direct=false&includeDeprecated=false"),
     ("Images of neurons that develops from this", "http://owl.virtualflybrain.org/kbs/vfb/instances?object=%3Chttp://purl.obolibrary.org/obo/FBbt_00005106%3E%20and%20%3Chttp://purl.obolibrary.org/obo/BFO_0000050%3E%20some%20%3Chttp://purl.obolibrary.org/obo/{id}%3E&direct=false&includeDeprecated=false"),
-    ("V3 term info Queries", "https://v3-cached.virtualflybrain.org/get_term_info?id={id}")
+    ("V3 term info Queries", "https://v3-cached.virtualflybrain.org/get_term_info?id={id}"),
+    ("V3 ListAllAvailableImages", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=ListAllAvailableImages"),
+    ("V3 PartsOf", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=PartsOf"),
+    ("V3 SubclassesOf", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=SubclassesOf"),
+    ("V3 NeuronInputsTo", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=NeuronInputsTo"),
+    ("V3 NeuronNeuronConnectivityQuery", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=NeuronNeuronConnectivityQuery"),
+    ("V3 NeuronsPartHere", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=NeuronsPartHere"),
+    ("V3 NeuronsSynaptic", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=NeuronsSynaptic"),
+    ("V3 PaintedDomains", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=PaintedDomains"),
+    ("V3 AllAlignedImages", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=AllAlignedImages"),
+    ("V3 AllDatasets", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=AllDatasets"),
+    ("V3 ExpressionOverlapsHere", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=ExpressionOverlapsHere"),
+    ("V3 SimilarMorphologyTo", "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=SimilarMorphologyTo"),
 ]
 
 def main():
