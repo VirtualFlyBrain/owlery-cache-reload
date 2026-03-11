@@ -24,21 +24,11 @@ def run_query(name, url_template, id, timeout=60):
     try:
         response = _get_session().get(query_url, timeout=timeout)
         if response.status_code == 200:
-            try:
-                data = response.json()
-                if 'instances' in query_url:
-                    count = len(data.get('hasInstance', []))
-                elif 'subclasses' in query_url:
-                    count = len(data.get('superClassOf', []))
-                else:
-                    count = 0  # For other endpoints if any
-                return f"✓ {name} for {id}: {count} results"
-            except:
-                return f"✓ {name} for {id}"
+            return f"✓ {name} for {id}"
         else:
-            return f"Error for {name} {id}: {query_url}, status {response.status_code}"
+            return f"✗ {name} for {id}: status {response.status_code}"
     except Exception as e:
-        return f"Error for {name} {id}: {query_url}, {str(e)}"
+        return f"✗ {name} for {id}: {str(e)}"
 
 # List of OWLERY queries extracted from the queries_execution_notebook.ipynb
 # Each tuple: (name, url_template)
