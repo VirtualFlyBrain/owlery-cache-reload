@@ -95,18 +95,22 @@ def main():
         print(f"Limited to first {args.max_ids} IDs for testing.")
 
     total_queries = len(queries) * len(ids)
-    print(f"Total queries to run: {total_queries}")
+    print(f"Total queries to run: {total_queries} across {len(queries)} query types running in parallel.")
 
-    all_tasks = [(name, url_template, id) for id in ids for name, url_template in queries]
+    counter = [0]
+    counter_lock = threading.Lock()
 
-    count = 0
-    with ThreadPoolExecutor(max_workers=args.parallel) as executor:
-        futures = {executor.submit(run_query, name, url_template, id, args.timeout): (name, id)
-                   for name, url_template, id in all_tasks}
+    # Each query type gets its own thread pool; all pools run concurrently.
+    with ThreadPoolExecutor(max_workers=len(queries)) as query_type_executor:
+        futures = [
+            query_type_executor.submit(
+                run_query_type, name, url_template, ids,
+                args.timeout, args.parallel, counter, counter_lock, total_queries
+            )
+            for name, url_template in queries
+        ]
         for future in as_completed(futures):
-            result = future.result()
-            count += 1
-            print(f"[{count}/{total_queries}] {result}")
+            future.result()  # re-raise any exceptions
 
     print("Caching complete.")
 
