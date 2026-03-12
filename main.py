@@ -12,6 +12,17 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from vfb_connect import vfb
 
+def run_query_type(name, url_template, ids, timeout, parallel, counter, counter_lock, total_queries):
+    """Run all IDs for a single query type in its own thread pool."""
+    with ThreadPoolExecutor(max_workers=parallel) as executor:
+        futures = {executor.submit(run_query, name, url_template, id, timeout): id for id in ids}
+        for future in as_completed(futures):
+            result = future.result()
+            with counter_lock:
+                counter[0] += 1
+                count = counter[0]
+            print(f"[{count}/{total_queries}] {result}")
+
 _thread_local = threading.local()
 
 def _get_session():
