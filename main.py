@@ -73,15 +73,10 @@ def main():
     ids_result = vfb.nc.commit_list([id_query])
     ids = [row['row'][0] for row in ids_result[0]['data']]
 
-    def id_sort_key(id):
-        if id.startswith('FBbt_'):
-            return (0, id)
-        elif id.startswith('VFB_'):
-            return (1, id)
-        else:
-            return (2, id)
-
-    ids.sort(key=id_sort_key)
+    vfb_ids = sorted([i for i in ids if i.startswith('VFB_')], reverse=True)
+    fbbt_ids = sorted([i for i in ids if i.startswith('FBbt_')], reverse=True)
+    other_ids = [i for i in ids if not i.startswith('VFB_') and not i.startswith('FBbt_')]
+    ids = vfb_ids + fbbt_ids + other_ids
     print(f"Found {len(ids)} anatomy IDs.")
 
     if args.max_ids:
