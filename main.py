@@ -73,7 +73,8 @@ def _filter_class_anatomy(_id, labels):
     return result
 
 def _filter_feature_id(id, labels):
-    return id.startswith("FBco_") or "Feature" in labels
+    # Only run this query on FBco IDs (feature combination terms), not all Feature-labeled nodes.
+    return id.startswith("FBco_")
 
 queries = [
     # legacy OWLERY queries (per-term, each ID is used)
