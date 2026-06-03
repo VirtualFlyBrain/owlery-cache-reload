@@ -12,10 +12,10 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from vfb_connect import vfb
 
-def run_query_type(name, url_template, ids, timeout, parallel, counter, counter_lock, total_queries):
+def run_query_type(name, url_template, ids, timeout, parallel, counter, counter_lock, total_queries, headers=None):
     """Run all IDs for a single query type in its own thread pool."""
     with ThreadPoolExecutor(max_workers=parallel) as executor:
-        futures = {executor.submit(run_query, name, url_template, id, timeout): id for id in ids}
+        futures = {executor.submit(run_query, name, url_template, id, timeout, headers): id for id in ids}
         for future in as_completed(futures):
             result = future.result()
             with counter_lock:
@@ -30,7 +30,7 @@ def _get_session():
         _thread_local.session = requests.Session()
     return _thread_local.session
 
-def run_query(name, url_template, id, timeout=60):
+def run_query(name, url_template, id, timeout=60, headers=None):
     if id is None:
         query_url = url_template
         id_label = "(global)"
@@ -39,7 +39,7 @@ def run_query(name, url_template, id, timeout=60):
         id_label = id
 
     try:
-        response = _get_session().get(query_url, timeout=timeout)
+        response = _get_session().get(query_url, timeout=timeout, headers=headers)
         if response.status_code == 200:
             return f"✓ {name} for {id_label}"
         else:
@@ -126,7 +126,17 @@ def main():
     parser.add_argument('--max-ids', type=int, default=None, help='Maximum number of IDs to test per query (for testing).')
     parser.add_argument('--timeout', type=int, default=9000, help='Timeout in seconds for each query request.')
     parser.add_argument('--parallel', type=int, default=50, help='Number of parallel requests to run at once.')
+    parser.add_argument(
+        '--force-refresh', action='store_true',
+        help='Send X-Force-Refresh: true on every request. owl_cache (v3-cached) '
+             'bypasses its cache for the request and overwrites the canonical slot '
+             'with the fresh upstream response. Use after a VFBquery release to '
+             'pre-warm the cache so end-users never see a cold miss.',
+    )
     args = parser.parse_args()
+    request_headers = {'X-Force-Refresh': 'true'} if args.force_refresh else None
+    if args.force_refresh:
+        print("force-refresh mode: X-Force-Refresh: true on every request")
 
     # Connect to VFB
     print("Connecting to VFB...")
@@ -184,7 +194,8 @@ def main():
         futures = [
             query_type_executor.submit(
                 run_query_type, name, url_template, ids,
-                args.timeout, args.parallel, counter, counter_lock, total_queries
+                args.timeout, args.parallel, counter, counter_lock, total_queries,
+                request_headers,
             )
             for name, url_template, ids in query_jobs
         ]
