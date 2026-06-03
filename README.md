@@ -21,12 +21,41 @@ The script `main.py`:
 Run with:
 ```
 source .venv/bin/activate
-python main.py [--max-ids N] [--timeout T] [--parallel P]
+python main.py [--max-ids N] [--timeout T] [--parallel P] [--force-refresh] [--only TOKENS] [--skip TOKENS] [--list-servers]
 ```
 
-Where `--max-ids N` limits to the first N IDs per query for testing (optional), `--timeout T` sets the timeout in seconds for each request (default 60), and `--parallel P` sets the number of parallel requests to run at once (default 9).
+| Flag | Effect |
+| --- | --- |
+| `--max-ids N` | Limit to the first N IDs per query (for testing). |
+| `--timeout T` | Per-request timeout in seconds (default 9000). |
+| `--parallel P` | Number of parallel requests per query type (default 50). |
+| `--force-refresh` | Send `X-Force-Refresh: true` on every request so the v3-cached layer bypasses its cache and overwrites the canonical slot with the fresh upstream response. Use after a VFBquery release to pre-warm the cache. |
+| `--only TOKENS` | Run only query types whose backend server host **or** name contains one of the comma-separated tokens (case-insensitive substring). Applied before `--skip`. |
+| `--skip TOKENS` | Skip query types whose backend server host **or** name contains one of the tokens. Applied after `--only`. |
+| `--list-servers` | Print the backend servers and the query types targeting each, then exit. Use to see what tokens `--only`/`--skip` will match. |
 
-Each request has a configurable timeout (default 60 seconds). Some queries may timeout, but the cache will still be populated for successful ones.
+Some queries may time out, but the cache will still be populated for successful ones.
+
+### Refreshing selected servers
+
+Queries run against two backend hosts: `owl.virtualflybrain.org` (legacy OWLERY) and `v3-cached.virtualflybrain.org` (the V3 cache). `--only`/`--skip` match against either the host or the query-type name, so they can target a whole server or a single query type without a separate group taxonomy.
+
+```
+# See the servers and their query types
+python main.py --list-servers
+
+# Refresh only OWLERY
+python main.py --only owl --force-refresh
+
+# Refresh everything except OWLERY (i.e. only the V3 cache)
+python main.py --skip owl --force-refresh
+
+# Refresh the V3 cache only
+python main.py --only v3-cached --force-refresh
+
+# Refresh a single query type by name
+python main.py --only NeuronInputsTo
+```
 
 The script is designed to run in a Jenkins job with Python 3.10 after each VFB release.
 
