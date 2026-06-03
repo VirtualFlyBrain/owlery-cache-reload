@@ -9,6 +9,7 @@ with all potential anatomy IDs against the OWLERY server.
 import requests
 import threading
 import argparse
+from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from vfb_connect import vfb
 
@@ -82,6 +83,27 @@ def _filter_feature_id(id, labels):
     # Only run this query on FBco IDs (feature combination terms), not all Feature-labeled nodes.
     return id.startswith("FBco_")
 
+def _server_of(url_template):
+    """Derive the backend host a query targets, used by --only/--skip.
+
+    Returns the netloc (e.g. 'owl.virtualflybrain.org' or
+    'v3-cached.virtualflybrain.org'). Falls back to '' for malformed templates.
+    """
+    return (urlparse(url_template).netloc or "").lower()
+
+def _query_matches(q, tokens):
+    """True if any token (case-insensitive substring) matches the query's
+    server host or its name. Used to resolve both --only and --skip."""
+    server = _server_of(q["template"])
+    name = q["name"].lower()
+    return any(t in server or t in name for t in tokens)
+
+def _parse_tokens(raw):
+    """Split a comma-separated CLI value into a list of lowercased tokens."""
+    if not raw:
+        return []
+    return [t.strip().lower() for t in raw.split(",") if t.strip()]
+
 queries = [
     # legacy OWLERY queries (per-term, each ID is used)
     {"name": "Owlery Neuron class with part here", "template": "http://owl.virtualflybrain.org/kbs/vfb/subclasses?object=%3Chttp://purl.obolibrary.org/obo/FBbt_00005106%3E%20and%20%3Chttp://purl.obolibrary.org/obo/RO_0002131%3E%20some%20%3Chttp://purl.obolibrary.org/obo/{id}%3E&direct=false&includeDeprecated=false&includeEquivalent=true", "id_required": True, "id_filter": _filter_class_anatomy, "allow_fallback": False},
@@ -133,7 +155,61 @@ def main():
              'with the fresh upstream response. Use after a VFBquery release to '
              'pre-warm the cache so end-users never see a cold miss.',
     )
+    parser.add_argument(
+        '--only', default=None, metavar='TOKENS',
+        help='Comma-separated list of tokens; only run query types whose backend '
+             'server host OR name contains one of them (case-insensitive '
+             'substring). E.g. --only owl (just OWLERY), '
+             '--only v3-cached (just the V3 cache), --only NeuronInputsTo. '
+             'Applied before --skip.',
+    )
+    parser.add_argument(
+        '--skip', default=None, metavar='TOKENS',
+        help='Comma-separated list of tokens; skip query types whose backend '
+             'server host OR name contains one of them (case-insensitive '
+             'substring). E.g. --skip owl to refresh only the V3 cache and leave '
+             'OWLERY alone. Applied after --only.',
+    )
+    parser.add_argument(
+        '--list-servers', action='store_true',
+        help='Print the backend servers and the query types targeting each, then exit. '
+             'Use to see what tokens --only/--skip will match.',
+    )
     args = parser.parse_args()
+
+    only_tokens = _parse_tokens(args.only)
+    skip_tokens = _parse_tokens(args.skip)
+
+    # --list-servers: report the server -> query-type map and exit before any work.
+    if args.list_servers:
+        servers = {}
+        for q in queries:
+            servers.setdefault(_server_of(q["template"]), []).append(q["name"])
+        for server in sorted(servers):
+            print(f"{server} ({len(servers[server])} query types):")
+            for qname in servers[server]:
+                print(f"    {qname}")
+        return
+
+    # Resolve which query types to run from --only / --skip.
+    selected_queries = queries
+    if only_tokens:
+        selected_queries = [q for q in selected_queries if _query_matches(q, only_tokens)]
+    if skip_tokens:
+        selected_queries = [q for q in selected_queries if not _query_matches(q, skip_tokens)]
+
+    if only_tokens or skip_tokens:
+        if only_tokens:
+            print(f"--only {only_tokens}")
+        if skip_tokens:
+            print(f"--skip {skip_tokens}")
+        print(f"Selected {len(selected_queries)} of {len(queries)} query types:")
+        for q in selected_queries:
+            print(f"    [{_server_of(q['template'])}] {q['name']}")
+    if not selected_queries:
+        print("No query types selected after applying --only/--skip; nothing to do.")
+        return
+
     request_headers = {'X-Force-Refresh': 'true'} if args.force_refresh else None
     if args.force_refresh:
         print("force-refresh mode: X-Force-Refresh: true on every request")
@@ -165,7 +241,7 @@ def main():
 
     # Build query jobs optimized by ID requirement and ID filter
     query_jobs = []
-    for q in queries:
+    for q in selected_queries:
         if q.get("id_required", True):
             candidate_ids = [i for i in filtered_ids if q.get("id_filter", _filter_any)(i, id_labels_map.get(i, []))]
             if args.max_ids:
