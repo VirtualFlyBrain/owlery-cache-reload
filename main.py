@@ -83,6 +83,63 @@ def _filter_feature_id(id, labels):
     # Only run this query on FBco IDs (feature combination terms), not all Feature-labeled nodes.
     return id.startswith("FBco_")
 
+# Filters for the v2-frontend query types (vfb.xmi CompoundRefQuery matchingCriteria).
+# Each mirrors the input-type contract the v2 UI uses to decide whether to offer the
+# query, so the precache warms every term that can trigger a cold start. Where the
+# matchingCriteria discriminate on an Anatomy subtype (Synaptic_neuropil, Ganglion,
+# Neuromere, ...) we use the Class & Anatomy superset: warming a few extra slots is
+# cheap, missing a cold start is not.
+
+def _filter_class_neuron(id, labels):
+    """Neuron classes - class-level up/downstream connectivity."""
+    return "Class" in labels and "Neuron" in labels
+
+def _filter_region_connectivity(id, labels):
+    """Individuals with per-region connectivity data."""
+    return "has_region_connectivity" in labels
+
+def _filter_dataset_images(id, labels):
+    """Datasets that contain images (DatasetImages)."""
+    return "DataSet" in labels and "has_image" in labels
+
+def _filter_dataset_scrnaseq(id, labels):
+    """Datasets with single-cell RNAseq results (scRNAdatasetData)."""
+    return "DataSet" in labels and "hasScRNAseq" in labels
+
+def _filter_anat_scrnaseq(id, labels):
+    """Anatomy classes with single-cell RNAseq results (anatScRNAseqQuery)."""
+    return "Class" in labels and "Anatomy" in labels and "hasScRNAseq" in labels
+
+def _filter_gene_scrnaseq(id, labels):
+    """Gene classes with single-cell RNAseq results (expressionCluster)."""
+    return "Class" in labels and "Gene" in labels and "hasScRNAseq" in labels
+
+def _filter_cluster(id, labels):
+    """scRNAseq cluster individuals (clusterExpression)."""
+    return "Individual" in labels and "Cluster" in labels
+
+def _filter_pub(id, labels):
+    """Publication individuals (TermsForPub)."""
+    return "Individual" in labels and "pub" in labels
+
+def _filter_nblast_neuron(id, labels):
+    """Individual neurons with NBLAST-to-exp results (SimilarMorphologyToPartOf)."""
+    return "Individual" in labels and "Neuron" in labels and "NBLASTexp" in labels
+
+def _filter_nblast_exp(id, labels):
+    """Expression-pattern individuals with NBLAST-to-exp results (SimilarMorphologyToPartOfexp)."""
+    return ("Individual" in labels and "NBLASTexp" in labels
+            and ("Expression_pattern" in labels or "Expression_pattern_fragment" in labels))
+
+def _filter_nb_exp(id, labels):
+    """Expression-pattern individuals with NeuronBridge results (SimilarMorphologyToNB)."""
+    return ("Individual" in labels and "neuronbridge" in labels
+            and ("Expression_pattern" in labels or "Expression_pattern_fragment" in labels))
+
+def _filter_nb_neuron(id, labels):
+    """Individual neurons with NeuronBridge results (SimilarMorphologyToNBexp)."""
+    return "Individual" in labels and "neuronbridge" in labels and "Neuron" in labels
+
 def _server_of(url_template):
     """Derive the backend host a query targets, used by --only/--skip.
 
@@ -92,11 +149,13 @@ def _server_of(url_template):
     return (urlparse(url_template).netloc or "").lower()
 
 def _query_matches(q, tokens):
-    """True if any token (case-insensitive substring) matches the query's
-    server host or its name. Used to resolve both --only and --skip."""
+    """True if any token matches the query's server host or name (case-insensitive
+    substring), or one of its explicit tags (exact, case-insensitive). Used to
+    resolve both --only and --skip."""
     server = _server_of(q["template"])
     name = q["name"].lower()
-    return any(t in server or t in name for t in tokens)
+    tags = [t.lower() for t in q.get("tags", [])]
+    return any(t in server or t in name or t in tags for t in tokens)
 
 def _parse_tokens(raw):
     """Split a comma-separated CLI value into a list of lowercased tokens."""
@@ -130,11 +189,47 @@ queries = [
     {"name": "V3 AllAlignedImages", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=AllAlignedImages", "id_required": True, "id_filter": _filter_template_individual},
     {"name": "V3 AllDatasets", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=AllDatasets", "id_required": True, "id_filter": _filter_template_individual},
     {"name": "V3 ExpressionOverlapsHere", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=ExpressionOverlapsHere", "id_required": True, "id_filter": _filter_class_anatomy},
-    {"name": "V3 SimilarMorphologyTo", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=SimilarMorphologyTo", "id_required": True, "id_filter": _filter_individual_neuron},
+    {"name": "V3 SimilarMorphologyTo", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=SimilarMorphologyTo", "id_required": True, "id_filter": _filter_individual_neuron, "tags": ["morphology"]},
+
+    # V3 cached query_types offered by the v2 frontend (vfb.xmi) that were previously
+    # not pre-warmed, so cold starts hit users on first request after a release.
+    # Filters mirror each query's matchingCriteria. See geppetto-vfb/model/vfb.xmi.
+    # -- class-level anatomy queries (Class & Anatomy superset) --
+    {"name": "V3 TransgeneExpressionHere", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=TransgeneExpressionHere", "id_required": True, "id_filter": _filter_class_anatomy, "tags": ["expression"]},
+    {"name": "V3 AnatomyExpressedIn", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=AnatomyExpressedIn", "id_required": True, "id_filter": _filter_class_anatomy, "tags": ["expression"]},
+    {"name": "V3 epFrag", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=epFrag", "id_required": True, "id_filter": _filter_class_anatomy, "tags": ["expression"]},
+    {"name": "V3 NeuronClassesFasciculatingHere", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=NeuronClassesFasciculatingHere", "id_required": True, "id_filter": _filter_class_anatomy},
+    {"name": "V3 ImagesNeurons", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=ImagesNeurons", "id_required": True, "id_filter": _filter_class_anatomy},
+    {"name": "V3 NeuronsPresynapticHere", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=NeuronsPresynapticHere", "id_required": True, "id_filter": _filter_class_anatomy},
+    {"name": "V3 NeuronsPostsynapticHere", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=NeuronsPostsynapticHere", "id_required": True, "id_filter": _filter_class_anatomy},
+    {"name": "V3 TractsNervesInnervatingHere", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=TractsNervesInnervatingHere", "id_required": True, "id_filter": _filter_class_anatomy},
+    {"name": "V3 ComponentsOf", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=ComponentsOf", "id_required": True, "id_filter": _filter_class_anatomy},
+    {"name": "V3 LineageClonesIn", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=LineageClonesIn", "id_required": True, "id_filter": _filter_class_anatomy},
+    {"name": "V3 ImagesThatDevelopFrom", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=ImagesThatDevelopFrom", "id_required": True, "id_filter": _filter_class_anatomy},
+    # -- class-level connectivity (Class & Neuron) --
+    {"name": "V3 UpstreamClassConnectivity", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=UpstreamClassConnectivity", "id_required": True, "id_filter": _filter_class_neuron, "tags": ["connectivity"]},
+    {"name": "V3 DownstreamClassConnectivity", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=DownstreamClassConnectivity", "id_required": True, "id_filter": _filter_class_neuron, "tags": ["connectivity"]},
+    # -- individual neuron-to-region connectivity --
+    {"name": "V3 NeuronRegionConnectivityQuery", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=NeuronRegionConnectivityQuery", "id_required": True, "id_filter": _filter_region_connectivity, "tags": ["connectivity"]},
+    # -- datasets --
+    {"name": "V3 DatasetImages", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=DatasetImages", "id_required": True, "id_filter": _filter_dataset_images, "tags": ["dataset"]},
+    {"name": "V3 AlignedDatasets", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=AlignedDatasets", "id_required": True, "id_filter": _filter_template_individual, "tags": ["dataset"]},
+    # -- publications --
+    {"name": "V3 TermsForPub", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=TermsForPub", "id_required": True, "id_filter": _filter_pub, "tags": ["pub"]},
+    # -- NBLAST / NeuronBridge morphology --
+    {"name": "V3 SimilarMorphologyToPartOf", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=SimilarMorphologyToPartOf", "id_required": True, "id_filter": _filter_nblast_neuron, "tags": ["morphology", "nblast"]},
+    {"name": "V3 SimilarMorphologyToPartOfexp", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=SimilarMorphologyToPartOfexp", "id_required": True, "id_filter": _filter_nblast_exp, "tags": ["morphology", "nblast"]},
+    {"name": "V3 SimilarMorphologyToNB", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=SimilarMorphologyToNB", "id_required": True, "id_filter": _filter_nb_exp, "tags": ["morphology", "neuronbridge"]},
+    {"name": "V3 SimilarMorphologyToNBexp", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=SimilarMorphologyToNBexp", "id_required": True, "id_filter": _filter_nb_neuron, "tags": ["morphology", "neuronbridge"]},
+    # -- single-cell RNAseq --
+    {"name": "V3 anatScRNAseqQuery", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=anatScRNAseqQuery", "id_required": True, "id_filter": _filter_anat_scrnaseq, "tags": ["scrnaseq"]},
+    {"name": "V3 clusterExpression", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=clusterExpression", "id_required": True, "id_filter": _filter_cluster, "tags": ["scrnaseq"]},
+    {"name": "V3 scRNAdatasetData", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=scRNAdatasetData", "id_required": True, "id_filter": _filter_dataset_scrnaseq, "tags": ["scrnaseq"]},
+    {"name": "V3 expressionCluster", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=expressionCluster", "id_required": True, "id_filter": _filter_gene_scrnaseq, "tags": ["scrnaseq"]},
 
     # Newly requested V3 endpoints from VFBquery release
     {"name": "V3 resolve_entity", "template": "https://v3-cached.virtualflybrain.org/resolve_entity?query={id}", "id_required": True, "id_filter": _filter_flybase_id},
-    {"name": "V3 find_stocks", "template": "https://v3-cached.virtualflybrain.org/find_stocks?id={id}&collection=all", "id_required": True, "id_filter": _filter_flybase_stocks},
+    {"name": "V3 find_stocks", "template": "https://v3-cached.virtualflybrain.org/find_stocks?id={id}&collection=all", "id_required": True, "id_filter": _filter_flybase_stocks, "tags": ["flybase", "stocks"]},
     {"name": "V3 resolve_combination", "template": "https://v3-cached.virtualflybrain.org/resolve_combination?query={id}", "id_required": True, "id_filter": _filter_feature_id},
     {"name": "V3 find_combo_publications", "template": "https://v3-cached.virtualflybrain.org/find_combo_publications?id={id}", "id_required": True, "id_filter": _filter_feature_id},
 
@@ -189,6 +284,14 @@ def main():
             print(f"{server} ({len(servers[server])} query types):")
             for qname in servers[server]:
                 print(f"    {qname}")
+        tags = {}
+        for q in queries:
+            for t in q.get("tags", []):
+                tags.setdefault(t.lower(), []).append(q["name"])
+        if tags:
+            print("\nTags (usable as --only/--skip tokens):")
+            for tag in sorted(tags):
+                print(f"    {tag}: {', '.join(tags[tag])}")
         return
 
     # Resolve which query types to run from --only / --skip.
