@@ -8,6 +8,8 @@ After each release of VFB, the OWLERY query server needs to have its cache popul
 
 The script extracts OWLERY queries from the [queries_execution_notebook.ipynb](https://github.com/VirtualFlyBrain/geppetto-vfb/blob/master/model/queries_execution_notebook.ipynb), determines the restrictions on potential IDs (anatomy classes), uses VFBconnect to pull all potential anatomy IDs from the PDB database, and then runs each query against the OWLERY server to cache the results.
 
+It also pre-warms the `v3-cached` (VFBquery) layer. The set of `run_query` query types it covers is kept in step with the query types the v2 Geppetto frontend can fire, defined as `CompoundRefQuery` entries in [geppetto-vfb/model/vfb.xmi](https://github.com/VirtualFlyBrain/geppetto-vfb/blob/master/model/vfb.xmi). Each query's `id_filter` mirrors that query's `matchingCriteria`, so every term the v2 UI can offer a query for is warmed and end users never hit a cold start after a release. The only frontend query type deliberately not pre-warmed is `SimilarMorphologyToUserData`, which operates on user-uploaded data and has nothing to cache. If a new query type is added to the xmi, add a matching entry here.
+
 ## How it runs
 
 The script `main.py`:
@@ -38,7 +40,9 @@ Some queries may time out, but the cache will still be populated for successful 
 
 ### Refreshing selected servers
 
-Queries run against two backend hosts: `owl.virtualflybrain.org` (legacy OWLERY) and `v3-cached.virtualflybrain.org` (the V3 cache). `--only`/`--skip` match against either the host or the query-type name, so they can target a whole server or a single query type without a separate group taxonomy.
+Queries run against two backend hosts: `owl.virtualflybrain.org` (legacy OWLERY) and `v3-cached.virtualflybrain.org` (the V3 cache). `--only`/`--skip` match against the host, the query-type name, or an explicit per-query tag, so they can target a whole server, a single query type, or a tagged group without a separate group taxonomy.
+
+Tags currently defined: `flybase`/`stocks` (find_stocks), `connectivity`, `dataset`, `expression`, `morphology`, `nblast`, `neuronbridge`, `pub`, `scrnaseq`. Run `--list-servers` to see the full, current list. So e.g. `--only scrnaseq` warms just the four single-cell RNAseq query types, `--only dataset` the dataset queries, and so on.
 
 ```
 # See the servers and their query types
@@ -55,6 +59,9 @@ python main.py --only v3-cached --force-refresh
 
 # Refresh a single query type by name
 python main.py --only NeuronInputsTo
+
+# Refresh just the FlyBase stocks query via its tag
+python main.py --only flybase --force-refresh
 ```
 
 The script is designed to run in a Jenkins job with Python 3.10 after each VFB release.
