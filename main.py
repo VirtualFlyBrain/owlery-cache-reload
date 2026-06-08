@@ -188,7 +188,9 @@ queries = [
     {"name": "V3 PaintedDomains", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=PaintedDomains", "id_required": True, "id_filter": _filter_template_individual},
     {"name": "V3 AllAlignedImages", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=AllAlignedImages", "id_required": True, "id_filter": _filter_template_individual},
     {"name": "V3 AllDatasets", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=AllDatasets", "id_required": True, "id_filter": _filter_template_individual},
-    {"name": "V3 ExpressionOverlapsHere", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=ExpressionOverlapsHere", "id_required": True, "id_filter": _filter_class_anatomy},
+    # NB: query_type=ExpressionOverlapsHere removed - the VFBquery run_query endpoint
+    # does not recognise it (returns HTTP 400) and it is not in vfb.xmi. Its live
+    # equivalents are TransgeneExpressionHere and AnatomyExpressedIn (added below).
     {"name": "V3 SimilarMorphologyTo", "template": "https://v3-cached.virtualflybrain.org/run_query?id={id}&query_type=SimilarMorphologyTo", "id_required": True, "id_filter": _filter_individual_neuron, "tags": ["morphology"]},
 
     # V3 cached query_types offered by the v2 frontend (vfb.xmi) that were previously
