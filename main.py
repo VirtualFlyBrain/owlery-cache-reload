@@ -6,6 +6,7 @@ This script caches OWLERY queries for Virtual Fly Brain (VFB) by running all pos
 with all potential anatomy IDs against the OWLERY server.
 """
 
+import time
 import requests
 import threading
 import argparse
@@ -13,16 +14,34 @@ from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from vfb_connect import vfb
 
-def run_query_type(name, url_template, ids, timeout, parallel, counter, counter_lock, total_queries, headers=None):
-    """Run all IDs for a single query type in its own thread pool."""
-    with ThreadPoolExecutor(max_workers=parallel) as executor:
-        futures = {executor.submit(run_query, name, url_template, id, timeout, headers): id for id in ids}
+from throttle import AdaptiveLimiter, StatusGovernor, backoff_delay
+
+# Statuses that mean "the service is busy, come back later" rather than "this
+# query is wrong". A 503 from VFBquery specifically means the result is still
+# being computed and *will* be cached, so retrying is what populates the cache.
+RETRYABLE_STATUSES = (429, 502, 503, 504)
+
+def run_query_type(name, url_template, ids, timeout, threads, counter, counter_lock,
+                   total_queries, headers=None, limiter=None, retries=4,
+                   backoff_base=15.0, backoff_cap=300.0):
+    """Run all IDs for a single query type.
+
+    The pool size here only bounds how many threads may be *waiting*; the
+    limiter decides how many requests are actually in flight across the whole
+    sweep, so adding query types no longer multiplies the load on the service.
+    """
+    with ThreadPoolExecutor(max_workers=threads) as executor:
+        futures = {
+            executor.submit(run_query, name, url_template, id, timeout, headers,
+                            limiter, retries, backoff_base, backoff_cap): id
+            for id in ids
+        }
         for future in as_completed(futures):
             result = future.result()
             with counter_lock:
                 counter[0] += 1
                 count = counter[0]
-            print(f"[{count}/{total_queries}] {result}")
+            print(f"[{count}/{total_queries}] {result}", flush=True)
 
 _thread_local = threading.local()
 
@@ -31,7 +50,19 @@ def _get_session():
         _thread_local.session = requests.Session()
     return _thread_local.session
 
-def run_query(name, url_template, id, timeout=60, headers=None):
+def _retry_after_seconds(response, fallback):
+    """Honour a Retry-After header if the service sends one."""
+    value = response.headers.get("Retry-After")
+    if not value:
+        return fallback
+    try:
+        return max(0.0, float(value.strip()))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def run_query(name, url_template, id, timeout=200, headers=None, limiter=None,
+              retries=4, backoff_base=15.0, backoff_cap=300.0):
     if id is None:
         query_url = url_template
         id_label = "(global)"
@@ -39,14 +70,40 @@ def run_query(name, url_template, id, timeout=60, headers=None):
         query_url = url_template.format(id=id)
         id_label = id
 
-    try:
-        response = _get_session().get(query_url, timeout=timeout, headers=headers)
-        if response.status_code == 200:
-            return f"✓ {name} for {id_label}"
-        else:
-            return f"✗ {name} for {id_label}: status {response.status_code}"
-    except Exception as e:
-        return f"✗ {name} for {id_label}: {str(e)}"
+    last_reason = "no attempt made"
+
+    for attempt in range(retries + 1):
+        # The slot is held only for the request itself: a thread that is
+        # backing off must not occupy capacity it is not using.
+        if limiter is not None and not limiter.acquire():
+            return f"✗ {name} for {id_label}: aborted before request"
+        try:
+            response = _get_session().get(query_url, timeout=timeout, headers=headers)
+        except Exception as e:
+            response = None
+            last_reason = f"{type(e).__name__}: {e}"
+        finally:
+            if limiter is not None:
+                limiter.release()
+
+        if response is not None:
+            if response.status_code == 200:
+                suffix = f" (after {attempt} retr{'y' if attempt == 1 else 'ies'})" if attempt else ""
+                return f"✓ {name} for {id_label}{suffix}"
+            if response.status_code not in RETRYABLE_STATUSES:
+                # A real error with this query -- retrying will not help.
+                return f"✗ {name} for {id_label}: status {response.status_code}"
+            last_reason = f"status {response.status_code}"
+
+        if attempt == retries:
+            break
+
+        delay = backoff_delay(attempt, backoff_base, backoff_cap)
+        if response is not None:
+            delay = _retry_after_seconds(response, delay)
+        time.sleep(delay)
+
+    return f"✗ {name} for {id_label}: {last_reason} (gave up after {retries} retries)"
 
 # New script queries and target filtering based on node labels/supertypes.
 # Each query is: name, url_template, id_required, id_filter(id, labels)->bool
@@ -243,8 +300,70 @@ queries = [
 def main():
     parser = argparse.ArgumentParser(description='Cache OWLERY queries for VFB.')
     parser.add_argument('--max-ids', type=int, default=None, help='Maximum number of IDs to test per query (for testing).')
-    parser.add_argument('--timeout', type=int, default=9000, help='Timeout in seconds for each query request.')
-    parser.add_argument('--parallel', type=int, default=50, help='Number of parallel requests to run at once.')
+    parser.add_argument(
+        '--timeout', type=int, default=200,
+        help='Per-request timeout in seconds (default 200, just past the '
+             "server's 180s response budget). A thread that waits longer than "
+             'the server is ever going to take is holding a connection open '
+             'for nothing.',
+    )
+    parser.add_argument(
+        '--parallel', type=int, default=4,
+        help='Ceiling on requests in flight across the WHOLE sweep (default 4). '
+             'This is a global cap, not a per-query-type one: adding query '
+             'types no longer multiplies the load on the service. The governor '
+             'starts at --start-parallel and only creeps up towards this '
+             'ceiling while the service is idle.',
+    )
+    parser.add_argument(
+        '--start-parallel', type=int, default=1,
+        help='Requests in flight to begin with, before the governor has seen '
+             'any status readings (default 1).',
+    )
+    parser.add_argument(
+        '--threads-per-query', type=int, default=4,
+        help='Worker threads per query type (default 4). These only bound how '
+             'many requests may be queued up ready to go; --parallel decides '
+             'how many are actually in flight.',
+    )
+    parser.add_argument(
+        '--status-url', default='https://vfbquery.virtualflybrain.org/status',
+        help='VFBquery status endpoint used to pace the sweep. The governor '
+             'backs off whenever anything is queued there and pauses outright '
+             'when the service is saturated, so live user traffic always takes '
+             'priority. Pass an empty string to disable and run at a fixed '
+             '--parallel.',
+    )
+    parser.add_argument(
+        '--poll-interval', type=float, default=10.0,
+        help='Seconds between status polls (default 10).',
+    )
+    parser.add_argument(
+        '--idle-fraction', type=float, default=0.25,
+        help='Fraction of the service\'s max_concurrent below which it counts '
+             'as idle enough to speed up (default 0.25).',
+    )
+    parser.add_argument(
+        '--pause-seconds', type=float, default=60.0,
+        help='How long to stand down completely after finding the service '
+             'saturated (default 60).',
+    )
+    parser.add_argument(
+        '--retries', type=int, default=4,
+        help='Retries for busy responses (429/502/503/504) before giving up on '
+             'an ID (default 4). A 503 means the result is still computing and '
+             'will be cached, so retrying is how the cache actually gets '
+             'populated.',
+    )
+    parser.add_argument(
+        '--backoff-base', type=float, default=15.0,
+        help='First retry delay in seconds; doubles per attempt with jitter '
+             '(default 15).',
+    )
+    parser.add_argument(
+        '--backoff-cap', type=float, default=300.0,
+        help='Maximum retry delay in seconds (default 300).',
+    )
     parser.add_argument(
         '--force-refresh', action='store_true',
         help='Send X-Force-Refresh: true on every request. owl_cache (v3-cached) '
@@ -370,18 +489,42 @@ def main():
     counter = [0]
     counter_lock = threading.Lock()
 
-    # Each query type gets its own thread pool; all pools run concurrently.
-    with ThreadPoolExecutor(max_workers=len(query_jobs)) as query_type_executor:
-        futures = [
-            query_type_executor.submit(
-                run_query_type, name, url_template, ids,
-                args.timeout, args.parallel, counter, counter_lock, total_queries,
-                request_headers,
-            )
-            for name, url_template, ids in query_jobs
-        ]
-        for future in as_completed(futures):
-            future.result()  # re-raise any exceptions
+    # One global limiter shared by every query type. Previously each query type
+    # got its own pool of --parallel threads and all pools ran at once, so the
+    # sweep could offer the service len(query_jobs) x parallel requests --
+    # thousands, against a service advertising max_concurrent in the tens.
+    limiter = AdaptiveLimiter(initial=args.start_parallel, hard_max=args.parallel)
+    governor = StatusGovernor(
+        limiter,
+        status_url=args.status_url.strip(),
+        poll_interval=args.poll_interval,
+        idle_fraction=args.idle_fraction,
+        pause_seconds=args.pause_seconds,
+    )
+    print(f"Pacing: up to {args.parallel} request(s) in flight across the whole "
+          f"sweep, starting at {args.start_parallel}"
+          + (f", governed by {args.status_url.strip()}" if args.status_url.strip()
+             else " (governor disabled)"))
+    governor.start()
+
+    try:
+        # Each query type gets its own thread pool; all pools run concurrently,
+        # but the limiter decides how many requests are actually in flight.
+        with ThreadPoolExecutor(max_workers=len(query_jobs)) as query_type_executor:
+            futures = [
+                query_type_executor.submit(
+                    run_query_type, name, url_template, ids,
+                    args.timeout, args.threads_per_query, counter, counter_lock,
+                    total_queries, request_headers, limiter, args.retries,
+                    args.backoff_base, args.backoff_cap,
+                )
+                for name, url_template, ids in query_jobs
+            ]
+            for future in as_completed(futures):
+                future.result()  # re-raise any exceptions
+    finally:
+        governor.stop()
+        limiter.close()
 
     print("Caching complete.")
 
