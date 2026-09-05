@@ -106,6 +106,21 @@ python main.py --only flybase --force-refresh
 
 The script is designed to run in a Jenkins job with Python 3.10 after each VFB release.
 
+### Common Jenkins `OPTIONALOPTS` recipes
+
+The `PreLoad_OWL_server` Jenkins job passes its `OPTIONALOPTS` string parameter straight into the shell as `${OPTIONALOPTS}`, **unquoted**. Any value containing a space gets word-split by bash before `main.py` ever sees it -- a quoted multi-word value like `--skip "a b,c d"` turns into several stray positional arguments and `main.py` exits with an argparse error before doing anything (this is what happened in build #90; nothing had run yet at that point). Until that job is fixed (candidate fix: wrap the invocation in `eval` so quoting works, at the cost of turning `OPTIONALOPTS` into a shell-injection surface for anyone with build permission on the job -- deliberately left unresolved as a trade-off), **every value below is written with no spaces**, using commas to join `--only`/`--skip` tokens and single distinctive words instead of quoted phrases. Keep new recipes to this same style unless the job's quoting is fixed first.
+
+| Goal | `OPTIONALOPTS` |
+| --- | --- |
+| Full sweep (default, after a release) | *(leave blank)* `--force-refresh` |
+| `V3 term info` cache only | `--only info --force-refresh` |
+| VFBquery/`v3-cached` layer only (skip raw Owlery) | `--only v3-cached --force-refresh` |
+| Raw Owlery (legacy `owl.virtualflybrain.org`) only, all query types | `--only owl --force-refresh` |
+| Raw Owlery **essentials only** -- just the two queries reused as building blocks by everything else (`Owlery SubclassesOf`, `Owlery Part of`; see `VFBquery/src/vfbquery/vfb_queries.py`'s `_get_all_children` helper, which calls exactly these two for every subclass/part-of hierarchy traversal) | `--only owl --skip here,presynaptic,postsynaptic,overlaps,synaptic,develops --force-refresh` |
+| One tagged group (e.g. scRNAseq) | `--only scrnaseq --force-refresh` |
+
+`--only`/`--skip` match on host, query-type name, or tag as a case-insensitive substring (see above), so a new recipe is usually one distinctive, space-free word away. Run `--list-servers` first to see every current query-type name and tag, pick a word unique to what you want to keep or drop, and check it against the full list before using it in Jenkins -- a substring that also matches something you didn't intend will silently pull it in too.
+
 ## Dependencies
 
 Create and activate a virtual environment:
