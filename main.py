@@ -444,7 +444,9 @@ def main():
 
     # Get all relevant Entity IDs and labels
     print("Retrieving terms + labels from Neo4j...")
-    id_query = "MATCH (n:Entity) WHERE exists(n.short_form) AND NOT n.short_form starts with 'VFBc_' AND NOT n.short_form starts with 'VFB_internal' RETURN distinct n.short_form AS id, labels(n) AS labels"
+    # Deprecated (obsolete) terms are left out: Owlery does not load them, so every Owlery query on one is a
+    # guaranteed 400, and VFBquery no longer offers Owlery-backed queries on them (so nothing can trigger a cold start).
+    id_query = "MATCH (n:Entity) WHERE exists(n.short_form) AND NOT n:Deprecated AND NOT n.short_form starts with 'VFBc_' AND NOT n.short_form starts with 'VFB_internal' RETURN distinct n.short_form AS id, labels(n) AS labels"
     ids_result = vfb.nc.commit_list([id_query])
     id_labels_map = {row['row'][0]: row['row'][1] for row in ids_result[0]['data']}
 
